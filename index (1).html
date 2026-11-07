@@ -1,0 +1,449 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<style>html{color-scheme:light}body{margin:0;font-family:system-ui,-apple-system,'Segoe UI',sans-serif}img{max-width:100%}[hidden]{display:none!important}</style>
+<title>Packet Jeopardy Full Unit</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@600;700;800&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@500;600&display=swap">
+<style>
+/* Layout: projector-first game board &#x2014; header bar, 4-column packet board, team scoreboard strip; modal for each question */
+:root{
+  --bg:#eaeff4; --surface:#ffffff; --ink:#14202e; --muted:#566476; --line:#c6d1dc;
+  --board:#17324d; --board-hi:#1f4266; --tile-ink:#eef4fa; --accent:#e89a12; --accent-ink:#1b1305;
+  --ack:#22805d; --bad:#c2412d; --overlay:rgba(10,20,32,.72);
+  --f-display:"Barlow Condensed","Arial Narrow",Arial,sans-serif;
+  --f-body:"IBM Plex Sans",system-ui,-apple-system,"Segoe UI",sans-serif;
+  --f-mono:"IBM Plex Mono",ui-monospace,Menlo,Consolas,monospace;
+}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){
+  --bg:#0d141b; --surface:#16212c; --ink:#e4ebf2; --muted:#93a2b3; --line:#2b3a49;
+  --board:#1b3956; --board-hi:#245078; --tile-ink:#eef4fa; --accent:#f3b13c; --accent-ink:#1b1305;
+  --ack:#4cbf92; --bad:#ec6a55; --overlay:rgba(0,0,0,.75); color-scheme:dark}}
+:root[data-theme="dark"]{
+  --bg:#0d141b; --surface:#16212c; --ink:#e4ebf2; --muted:#93a2b3; --line:#2b3a49;
+  --board:#1b3956; --board-hi:#245078; --tile-ink:#eef4fa; --accent:#f3b13c; --accent-ink:#1b1305;
+  --ack:#4cbf92; --bad:#ec6a55; --overlay:rgba(0,0,0,.75); color-scheme:dark}
+
+*{box-sizing:border-box}
+body{background:var(--bg);color:var(--ink);font-family:var(--f-body);font-size:16px;line-height:1.5}
+.wrap{max-width:1200px;margin:0 auto;padding-block:20px 32px;
+  padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px));
+  display:flex;flex-direction:column;gap:18px}
+header{display:flex;flex-wrap:wrap;align-items:flex-end;justify-content:space-between;gap:12px}
+.eyebrow{font-family:var(--f-mono);font-size:12px;letter-spacing:.12em;text-transform:uppercase;color:var(--muted);margin:0}
+h1{font-family:var(--f-display);font-weight:800;font-size:clamp(34px,5vw,52px);line-height:1;margin:2px 0 0;letter-spacing:.01em;text-wrap:balance}
+h1 span{color:var(--accent)}
+.controls{display:flex;flex-wrap:wrap;gap:8px}
+button{font:inherit;cursor:pointer}
+.btn{font-family:var(--f-body);font-weight:600;font-size:14px;padding:9px 14px;border-radius:6px;border:1px solid var(--line);background:var(--surface);color:var(--ink)}
+.btn:hover{border-color:var(--muted)}
+.btn.primary{background:var(--accent);color:var(--accent-ink);border-color:var(--accent)}
+.btn:focus-visible,.tile:focus-visible,.mini:focus-visible{outline:3px solid var(--accent);outline-offset:2px}
+
+/* board */
+.board{display:grid;grid-template-columns:repeat(6,minmax(0,1fr));gap:8px;background:var(--surface);border:1px solid var(--line);border-radius:10px;padding:8px}
+.cat{background:var(--board);color:var(--tile-ink);border-radius:6px;padding:12px 10px;display:flex;flex-direction:column;justify-content:center;gap:2px;min-height:86px}
+.cat .pn{font-family:var(--f-mono);font-size:10px;letter-spacing:.14em;text-transform:uppercase;color:var(--accent)}
+.cat .nm{font-family:var(--f-display);font-weight:700;font-size:clamp(12px,1.7vw,21px);line-height:1.05;text-transform:uppercase;text-wrap:balance}
+.tile{position:relative;background:var(--board);color:var(--accent);border:0;border-radius:6px;min-height:clamp(64px,11vw,104px);
+  font-family:var(--f-display);font-weight:800;font-size:clamp(20px,3.8vw,46px);font-variant-numeric:tabular-nums;transition:background .15s,transform .15s}
+.tile:hover:not(.used){background:var(--board-hi);transform:translateY(-1px)}
+.tile .seq{position:absolute;top:6px;left:8px;font-family:var(--f-mono);font-weight:500;font-size:10px;letter-spacing:.08em;color:var(--tile-ink);opacity:.55}
+.tile.used{background:transparent;border:2px dashed var(--line);color:var(--ack);cursor:default}
+.tile.used .val{font-family:var(--f-mono);font-size:clamp(14px,2vw,20px);font-weight:600;letter-spacing:.1em}
+.tile.used .seq{color:var(--muted)}
+
+/* scoreboard */
+.scores{display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:8px}
+.team{background:var(--surface);border:1px solid var(--line);border-radius:8px;padding:10px 12px;display:flex;flex-direction:column;gap:6px;min-width:0}
+.team input{font:inherit;font-weight:600;font-size:15px;color:var(--ink);background:transparent;border:0;border-bottom:1px dashed var(--line);padding:2px 0;width:100%}
+.team input:focus{outline:none;border-bottom-color:var(--accent)}
+.team .row{display:flex;align-items:center;justify-content:space-between;gap:8px}
+.team .pts{font-family:var(--f-display);font-weight:800;font-size:38px;line-height:1;font-variant-numeric:tabular-nums}
+.team .pts.neg{color:var(--bad)}
+.mini{width:30px;height:30px;border-radius:5px;border:1px solid var(--line);background:var(--bg);color:var(--ink);font-weight:700}
+.adj{display:flex;gap:4px}
+.foot{display:flex;flex-wrap:wrap;gap:8px;align-items:center;justify-content:space-between;color:var(--muted);font-size:13px}
+kbd{font-family:var(--f-mono);font-size:12px;border:1px solid var(--line);border-radius:4px;padding:1px 5px;background:var(--surface)}
+
+/* modal */
+.modal{position:fixed;inset:0;background:var(--overlay);display:flex;align-items:center;justify-content:center;z-index:20;
+  padding:max(16px,env(safe-area-inset-top,0px)) max(16px,env(safe-area-inset-right,0px)) max(16px,env(safe-area-inset-bottom,0px)) max(16px,env(safe-area-inset-left,0px))}
+.card{background:var(--surface);color:var(--ink);border-radius:12px;width:min(900px,100%);max-height:100%;overflow:auto;display:flex;flex-direction:column}
+.card-head{background:var(--board);color:var(--tile-ink);padding:14px 20px;display:flex;justify-content:space-between;align-items:center;gap:12px;border-radius:12px 12px 0 0}
+.card-head .meta{font-family:var(--f-mono);font-size:12px;letter-spacing:.12em;text-transform:uppercase}
+.card-head .v{font-family:var(--f-display);font-weight:800;font-size:34px;color:var(--accent);line-height:1}
+.card-body{padding:22px 24px;display:flex;flex-direction:column;gap:18px}
+.dd{font-family:var(--f-display);font-weight:800;font-size:clamp(36px,7vw,64px);color:var(--accent);text-align:center;line-height:1;letter-spacing:.02em}
+.q{font-size:clamp(22px,3.2vw,34px);line-height:1.3;font-weight:500;margin:0;text-wrap:balance}
+.blank{display:inline-block;min-width:4ch;border-bottom:3px solid var(--accent)}
+.ans{border-left:5px solid var(--ack);background:var(--bg);padding:14px 16px;border-radius:0 8px 8px 0;font-size:clamp(18px,2.4vw,24px)}
+.ans b{display:block;font-family:var(--f-mono);font-size:12px;letter-spacing:.12em;text-transform:uppercase;color:var(--ack);margin-bottom:4px;font-weight:600}
+.award{display:flex;flex-direction:column;gap:8px}
+.award h3{margin:0;font-family:var(--f-mono);font-size:12px;letter-spacing:.12em;text-transform:uppercase;color:var(--muted);font-weight:600}
+.award-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:8px}
+.aw{display:flex;align-items:center;justify-content:space-between;gap:8px;border:1px solid var(--line);border-radius:8px;padding:8px 10px;min-width:0}
+.aw span{font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0}
+.aw .bs{display:flex;gap:6px;flex:none}
+.ok{background:var(--ack);color:#fff;border:0;border-radius:6px;padding:6px 10px;font-weight:700}
+.no{background:transparent;color:var(--bad);border:1px solid var(--bad);border-radius:6px;padding:6px 10px;font-weight:700}
+.ok[disabled],.no[disabled]{opacity:.35;cursor:default}
+.wager{display:flex;flex-wrap:wrap;gap:10px;align-items:center}
+.wager input{font:inherit;font-size:18px;width:120px;padding:6px 8px;border:1px solid var(--line);border-radius:6px;background:var(--bg);color:var(--ink)}
+.actions{display:flex;flex-wrap:wrap;gap:8px;justify-content:flex-end}
+.rules{margin:0;padding:0;list-style:none;display:flex;flex-direction:column;gap:12px;counter-reset:r}
+.rules li{counter-increment:r;display:grid;grid-template-columns:44px 1fr;gap:12px;align-items:start;font-size:clamp(17px,2.2vw,22px);line-height:1.4}
+.rules li::before{content:counter(r);font-family:var(--f-display);font-weight:800;font-size:30px;line-height:1;color:var(--accent-ink);background:var(--accent);border-radius:6px;text-align:center;padding:6px 0}
+.rules b{font-weight:600}
+.note{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:10px}
+.note div{border:1px solid var(--line);border-radius:8px;padding:12px 14px;font-size:16px}
+.note h4{margin:0 0 4px;font-family:var(--f-mono);font-size:12px;letter-spacing:.12em;text-transform:uppercase;color:var(--ack)}
+.cleared{background:var(--surface);border:2px solid var(--accent);border-radius:8px;padding:12px 16px;font-size:18px}
+.win{font-family:var(--f-display);font-weight:800;font-size:clamp(40px,8vw,76px);line-height:1;text-align:center;margin:0;text-wrap:balance}
+.win span{color:var(--accent)}
+.sub{text-align:center;color:var(--muted);margin:0;font-size:18px}
+.stand{display:flex;flex-direction:column;gap:8px}
+.st{display:grid;grid-template-columns:48px minmax(0,1fr) auto;gap:12px;align-items:center;border:1px solid var(--line);border-radius:8px;padding:10px 14px}
+.st.first{border:2px solid var(--accent);background:var(--bg)}
+.st .rk{font-family:var(--f-display);font-weight:800;font-size:28px;color:var(--muted);text-align:center}
+.st.first .rk{color:var(--accent)}
+.st .nm{font-weight:600;font-size:20px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.st .sc{font-family:var(--f-display);font-weight:800;font-size:30px;font-variant-numeric:tabular-nums}
+#confetti{position:fixed;inset:0;pointer-events:none;z-index:30}
+.timer{font-family:var(--f-display);font-weight:800;font-size:28px;font-variant-numeric:tabular-nums;min-width:3ch;text-align:center;align-self:center}
+.timer.low{color:var(--bad)}
+@media (max-width:560px){.board{gap:4px;padding:4px}.cat .pn{display:none}.cat{min-height:70px;padding:8px 6px}.tile .seq{display:none}.card-body{padding:16px}}
+@media (prefers-reduced-motion:reduce){*{transition:none!important}}
+</style>
+</head>
+<body>
+
+
+<div class="wrap">
+  <header>
+    <div>
+      <p class="eyebrow">AP CSP &#xB7; Big Idea 4 &#xB7; Full Packet Review &#xB7; Parts 1&#x2013;7</p>
+      <h1>Packet <span>Jeopardy</span></h1>
+    </div>
+    <div class="controls">
+      <button class="btn" id="rulesBtn">How to play</button>
+      <button class="btn" id="addTeam">+ Team</button>
+      <button class="btn" id="removeTeam">&#x2212; Team</button>
+      <button class="btn" id="resetBtn">New game</button>
+      <button class="btn primary" id="finalBtn">Final round</button>
+      <button class="btn" id="winBtn">Show winner</button>
+    </div>
+  </header>
+
+  <section class="board" id="board" aria-label="Game board"></section>
+  <div class="cleared" id="clearMsg" hidden><b>Board cleared!</b> Every packet has been ACKed. Click <b>Final round</b> to finish the game.</div>
+  <section class="scores" id="scores" aria-label="Team scores"></section>
+
+  <div class="foot">
+    <span>Click a packet to open it. <kbd>Space</kbd> reveals the answer, <kbd>Esc</kbd> closes. Opened packets turn to <b style="color:var(--ack)">ACK</b>. <b>New game</b> draws a fresh mix of questions.</span>
+    <span id="confirmReset" hidden>Start over? <button class="btn" id="yesReset">Yes, reset</button> <button class="btn" id="noReset">Cancel</button></span>
+  </div>
+</div>
+
+<div class="modal" id="modal" hidden>
+  <div class="card" role="dialog" aria-modal="true" aria-labelledby="mq">
+    <div class="card-head"><span class="meta" id="mmeta"></span><span class="v" id="mval"></span></div>
+    <div class="card-body" id="mbody"></div>
+  </div>
+</div>
+
+<script>
+const B = s => s.replace(/___/g,'<span class="blank">&nbsp;</span>');
+/* Question bank: 6 categories covering Parts 1-7. Each tile has 3 versions at the same difficulty; one is picked each new game. */
+const CATS = [
+  {part:"Parts 1 & 3", name:"Packets & Fault Tolerance", qs:[
+    [ ["Everything we create on a computer is translated into digital information using ___.", "Binary \u2014 bits (1s and 0s)."],
+      ["Every message, file, or stream of information is broken down into smaller chunks called ___.", "Packets."],
+      ["What tool tests how long it takes packets to reach a server and whether any are lost along the way?", "Ping."] ],
+    [ ["When a ping finishes, what three things does the report tell you?", "How many packets were sent, how many were received, and how many were lost."],
+      ["Like an envelope, every packet carries two addresses. What are they?", "The destination address (where it\u2019s going) and the source address (where it came from)."],
+      ["A ping result says \u201Ctime=250ms.\u201D What does that number measure?", "The round-trip time: how long the packet took to reach the server and come back, in milliseconds."] ],
+    [ ["Being able to navigate through various conditions on the internet, and still deliver data, is called ___.", "Fault tolerance."],
+      ["How is working with packets like sending mail?", "Each packet is like an envelope: it carries a to/from address plus one piece of the message, and each one can travel separately."],
+      ["A ping report says 10 sent and 7 received. What happened to the other 3?", "They were lost somewhere in the network (packet loss)."] ],
+    [ ["How do we know if we lost data from a packet when sending it?", "Packets are numbered (sequence info in the header), so the receiver can see which number is missing and ask for it again."],
+      ["A file is split into 8 packets, but only packets 1\u20136 and 8 arrive. How does the receiver know what\u2019s missing, and what happens next?", "The numbers show packet 7 is missing, so the receiver asks for packet 7 to be sent again."],
+      ["A natural disaster knocks out part of the network. Why does your message still arrive?", "The network has many redundant paths, so packets get re-routed around the damage."] ],
+    [ ["Explain how a message of ANY size can travel over the internet.", "It is split into packets. Each packet\u2019s header carries addresses and a sequence number, so packets travel separately and are reassembled at the destination."],
+      ["What is the difference between a packet\u2019s data and its header (metadata)?", "The data is a piece of the actual message. The header is information about the packet: where it\u2019s going, where it came from, and its number."],
+      ["Your ping shows high packet loss. What would you notice in a video call, and why?", "Choppy or frozen video, glitchy audio, or lag \u2014 pieces of the stream are missing or have to be resent."] ]
+  ]},
+  {part:"Part 2", name:"HTTP & HTML", qs:[
+    [ ["What does URL stand for?", "Uniform Resource Locator \u2014 the web address of a page."],
+      ["What is a web browser?", "A program (like Chrome or Safari) that requests web pages and displays them."],
+      ["What does HTML stand for?", "HyperText Markup Language."] ],
+    [ ["What does HTTP stand for?", "HyperText Transfer Protocol."],
+      ["What is a URL?", "The address of a web page or resource, like www.example.com."],
+      ["When you send an HTTP request, what do you get back?", "An HTTP response \u2014 usually the HTML for the page you asked for."] ],
+    [ ["HTTP is mostly made of two types of requests. Name both, and say which one you use to ask for information.", "GET and POST. You use GET to request information (POST sends information)."],
+      ["Which type of HTTP request do you use to SEND information, like making a post on Tumblr?", "POST."],
+      ["True or false: images and video are included directly in the HTML.", "False. The HTML points to them, and the browser sends separate requests to get each one."] ],
+    [ ["Along with the POST request data, you also get a ___ \u2014 basically an ID card a website uses to recognize who you are.", "A cookie."],
+      ["Break down https://www.example.com/page1. What do \u201Chttps\u201D, \u201Cwww.example.com\u201D, and \u201C/page1\u201D each mean?", "https = the secure protocol; www.example.com = the domain name (server); /page1 = the specific page on that server."],
+      ["Why is it possible for hackers to steal information sent with plain HTTP?", "Plain HTTP isn\u2019t encrypted, and data passes through many computers on the way, so someone on the path can snoop or tamper."] ],
+    [ ["Name the two security protocols that stop snooping and tampering, and how you can tell a site is using them.", "SSL and TLS. Look for \u201Chttps\u201D and the lock icon in the address bar."],
+      ["You type https://www.example.com and press Enter. Describe what happens until the page appears.", "DNS finds the IP address, the browser sends an HTTP GET request over a secure (TLS) connection, the server sends back HTML, and the browser requests images and other files, then displays the page."],
+      ["You log into your school account on public Wi-Fi. What protects your password, and how can you check it\u2019s working?", "SSL/TLS encryption. Check for \u201Chttps\u201D and the lock icon before you type."] ]
+  ]},
+  {part:"Part 4", name:"Routing & TCP", qs:[
+    [ ["What device on the internet acts like a traffic manager to keep packets moving smoothly?", "Routers."],
+      ["What does TCP stand for?", "Transmission Control Protocol."],
+      ["True or false: every packet from the same file must take the same path.", "False. Packets can take different paths and are reassembled at the end."] ],
+    [ ["How do you send a large image file over the internet?", "Break it into packets, send them (possibly on different paths), and reassemble them in order at the destination."],
+      ["Information travels from one computer to another via a ___.", "A network (as packets)."],
+      ["What does a router do when a packet arrives?", "It reads the destination address and forwards the packet toward the next stop."] ],
+    [ ["___ handles the sending and receiving of all your data as packets.", "TCP \u2014 Transmission Control Protocol."],
+      ["Two packets from the same file take different routes. Why might that happen?", "Routers pick paths based on current conditions, so they send packets around busy or broken connections."],
+      ["TCP is usually written together with another protocol as \u201CTCP/___\u201D. What is it, and what does it do?", "IP \u2014 Internet Protocol. It handles addressing, so packets know where to go."] ],
+    [ ["You\u2019re streaming a song and some packets don\u2019t arrive. What does TCP do about it?", "TCP notices the missing packets and has them resent until every packet is there, then puts them back in order."],
+      ["Packets for your song arrive out of order. What does TCP do?", "It uses the packet numbers to put them back in the right order."],
+      ["Describe a situation where TCP\u2019s error-checking is crucial.", "Any time every bit must be correct \u2014 downloading an app, sending a file, or loading a bank page. A missing or out-of-order packet would corrupt it, so TCP checks and resends."] ],
+    [ ["What is great about the TCP and router systems working together?", "They make an unreliable network reliable: routers find any working path, and TCP guarantees complete, in-order delivery."],
+      ["Why is fault tolerance a good thing for the internet?", "The internet keeps working when parts fail, so data still gets delivered and the network can keep growing."],
+      ["Explain how you hear a whole song even though the network loses some packets.", "Routers send packets around problems, and TCP notices missing packets, gets them resent, and puts everything in order."] ]
+  ]},
+  {part:"Part 5", name:"IP Addresses & DNS", qs:[
+    [ ["What does IP stand for?", "Internet Protocol."],
+      ["What does DNS stand for?", "Domain Name System (also called Domain Name Service)."],
+      ["The internet is a network of ___.", "Networks."] ],
+    [ ["What is an IP address?", "A unique number given to each device on the internet \u2014 like a mailing address for a computer."],
+      ["What does DNS do?", "It translates names like www.example.com into the matching IP addresses."],
+      ["Who invented the internetworking protocol that the internet is built on?", "Vint Cerf and Bob Kahn."] ],
+    [ ["How many bits long is an IPv4 address?", "32 bits."],
+      ["In the 1970s, what was the problem with networks communicating with each other?", "Each network followed its own rules, so different networks couldn\u2019t talk to each other."],
+      ["Your laptop is on Wi-Fi. What does that local network connect to, which links you to billions of devices?", "An Internet Service Provider (ISP)."] ],
+    [ ["Why did the internet need IPv6?", "IPv4\u2019s 32 bits allow only about 4 billion addresses \u2014 not enough for all of today\u2019s devices."],
+      ["How do DNS servers handle so many requests every day?", "They are spread out in a hierarchy: if one server doesn\u2019t know an address, it asks another, and servers save (cache) answers they\u2019ve already looked up."],
+      ["How are IP addresses used to make sure data reaches the correct device?", "Every packet carries the destination\u2019s unique IP address, and routers use it to forward the packet step by step to that device."] ],
+    [ ["IPv6 uses ___ bits and can handle about ___ undecillion addresses.", "128 bits; about 340 undecillion addresses."],
+      ["Name a problem with DNS and how a hacker could use it.", "DNS spoofing: a hacker feeds a DNS server a fake address, so people trying to reach a real site are sent to a fake one that steals their info."],
+      ["A user types www.example.com. Explain the steps DNS takes to find the IP address.", "The computer asks a DNS server. If it knows (or has it cached), it answers; if not, it asks other DNS servers until one knows. The IP address comes back and the browser connects."] ]
+  ]},
+  {part:"Part 6", name:"Encryption", qs:[
+    [ ["What is encryption?", "Scrambling a message so only someone with the key can read it."],
+      ["What is decryption?", "Unscrambling an encrypted message back into readable form."],
+      ["What does the lock icon or \u201Chttps\u201D in the address bar mean?", "The connection is encrypted (secure) using SSL/TLS."] ],
+    [ ["What cipher did Julius Caesar use, and how did it work?", "The Caesar cipher: shift every letter a set number of places (with a shift of 3, A becomes D)."],
+      ["Encrypt the word CAT with a Caesar shift of 3.", "FDW."],
+      ["Why is encryption necessary when using the internet?", "Data passes through many computers on its way, so encryption keeps others from reading or changing it."] ],
+    [ ["What is the main weakness of the Caesar cipher?", "There are only 25 possible shifts, so anyone can try them all and crack it."],
+      ["Why can computers break short keys much faster than humans?", "They can try billions of possible keys every second."],
+      ["In symmetric encryption, how many keys are used?", "One \u2014 the same key encrypts and decrypts."] ],
+    [ ["What is the difference between symmetric and asymmetric encryption?", "Symmetric uses one shared key for both. Asymmetric uses two: a public key to encrypt and a private key to decrypt."],
+      ["In public key encryption, what does each key do?", "The public key (shared with anyone) encrypts; the private key (kept secret) decrypts."],
+      ["How does the mailbox analogy explain public and private keys?", "Anyone can drop a letter through the mailbox slot (public key), but only the owner with the key can open it and read the mail (private key)."] ],
+    [ ["What makes 256-bit encryption so secure?", "There are 2<sup>256</sup> possible keys \u2014 so many that even supercomputers would need an impossibly long time to try them all."],
+      ["Why might encryption methods need to keep changing in the future?", "Computers keep getting faster (for example, quantum computers), so keys that are safe today could be breakable later."],
+      ["What could happen if websites didn\u2019t use SSL/TLS? Give an everyday example.", "Anyone along the path could read or change your data \u2014 someone on caf\u00E9 Wi-Fi could steal your password or card number."] ]
+  ]},
+  {part:"Part 7", name:"Computing & Cybersecurity", qs:[
+    [ ["What is phishing?", "A fake message or website that pretends to be trustworthy to trick you into giving up information."],
+      ["What type of computing runs one step at a time, in order?", "Sequential computing."],
+      ["What is malware?", "Malicious software made to harm a computer or steal data (viruses, worms, spyware, ransomware)."] ],
+    [ ["What is ransomware?", "Malware that locks or encrypts your files and demands payment to unlock them."],
+      ["What is the digital divide?", "The gap between people who have access to computers and the internet and people who don\u2019t."],
+      ["What is parallel computing?", "Splitting a task into parts that run at the same time on multiple processors in one computer."] ],
+    [ ["What is distributed computing?", "Many separate computers, connected over a network, working together on one task."],
+      ["Name two ways to protect yourself from phishing, malware, or ransomware.", "Any two: don\u2019t click unknown links or attachments, use strong unique passwords, turn on multi-factor authentication, keep software updated, back up files."],
+      ["Give a real-world use of distributed computing.", "Weather prediction, scientific research, cloud services, search engines, or handling huge amounts of web traffic."] ],
+    [ ["Why is user behavior one of the most important parts of cybersecurity?", "Many attacks trick people, like phishing. One careless click can get past even strong technical defenses."],
+      ["In the puzzle analogy, how is parallel computing different from distributed computing?", "Parallel: friends at one big table (one computer, many processors, shared memory). Distributed: friends at different houses coordinating by phone (many computers on a network)."],
+      ["Why is the digital divide a problem?", "People without access miss out on school, jobs, information, and services that now depend on the internet, so existing gaps get wider."] ],
+    [ ["Tasks take 40, 30, and 20 seconds. How long do they take sequentially? In parallel on 2 processors?", "Sequential: 90 seconds. Parallel: 50 seconds (one processor runs the 40-second task, the other runs 30 + 20). Speedup = 90 \u00F7 50 = 1.8."],
+      ["Why doesn\u2019t adding more processors keep making a program faster forever?", "Diminishing returns: overhead and communication grow, and some steps still have to run in order."],
+      ["Why is distributed computing more fault tolerant than one computer?", "Each computer (node) works on its own, so if one fails the rest keep going."] ]
+  ]}
+];
+const FINALS = [
+  {q:"You type https://www.example.com and the page loads with three images. Explain what happens behind the scenes using at least FIVE of these terms: DNS, IP address, packets, routers, TCP, HTTP GET, HTML, TLS.",
+   a:"DNS turns www.example.com into the server\u2019s IP address. The browser sends an HTTP GET request, encrypted with TLS (the \u201Cs\u201D in https). It\u2019s split into packets, and routers forward each one toward that IP address. TCP makes sure every packet arrives, resends lost ones, and puts them in order. The server answers with HTML, and the browser sends separate GET requests for each image."},
+  {q:"A storm knocks out part of the network while you download a song. Explain how the WHOLE song still arrives, using at least FOUR of these terms: packets, sequence numbers, routers, fault tolerance, redundancy, TCP.",
+   a:"The song is split into numbered packets. Because the internet has redundancy (many paths), routers send packets around the damaged area \u2014 that\u2019s fault tolerance. TCP uses the sequence numbers to spot missing packets, asks for them to be resent, and puts everything back in order, so you get the complete song."},
+  {q:"You log into www.mybank.com on school Wi-Fi. Explain how your password gets to the bank safely, using at least FOUR of these terms: DNS, IP address, HTTPS, public key, private key, packets, TCP.",
+   a:"DNS finds the bank\u2019s IP address. The browser connects with HTTPS: it uses the bank\u2019s public key to set up encryption that only the bank\u2019s private key can unlock. Your password is encrypted, split into packets, and sent; TCP makes sure all the packets arrive in order. Anyone snooping on the Wi-Fi sees only scrambled data."}
+];
+const VALUES=[100,200,300,400,500];
+const KEY="packet-jeopardy-full-v1";
+const rnd=n=>Math.floor(Math.random()*n);
+function newPicks(){return {picks:CATS.map(c=>c.qs.map(v=>rnd(v.length))), fp:rnd(FINALS.length)}}
+
+let S = load() || fresh();
+function fresh(){
+  const dds=[]; while(dds.length<2){const k=rnd(6)+":"+(2+rnd(3)); if(!dds.includes(k))dds.push(k)} // two Daily Doubles on 300\u2013500 tiles
+  return {teams:[{name:"Team 1",score:0},{name:"Team 2",score:0},{name:"Team 3",score:0},{name:"Team 4",score:0}], used:[], dds, ...newPicks()};
+}
+function save(){try{localStorage.setItem(KEY,JSON.stringify(S))}catch(e){}}
+function load(){try{const v=JSON.parse(localStorage.getItem(KEY));if(!v||!v.teams)return null;if(!v.picks)Object.assign(v,newPicks());return v}catch(e){return null}}
+
+const $=id=>document.getElementById(id);
+function esc(s){return String(s).replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]))}
+
+function renderBoard(){
+  let h="";
+  CATS.forEach(c=>{h+=`<div class="cat"><span class="pn">${c.part}</span><span class="nm">${c.name}</span></div>`});
+  VALUES.forEach((v,r)=>{CATS.forEach((c,ci)=>{
+    const k=ci+":"+r, used=S.used.includes(k), seq=String(ci*5+r+1).padStart(2,"0");
+    h+=`<button class="tile${used?" used":""}" data-k="${k}" ${used?'aria-disabled="true"':""} aria-label="${c.name} for ${v}${used?", done":""}">
+      <span class="seq">SEQ ${seq}</span><span class="val">${used?"ACK \u2713":v}</span></button>`;
+  })});
+  $("board").innerHTML=h;
+  $("clearMsg").hidden=S.used.length<30;
+}
+function renderScores(){
+  $("scores").innerHTML=S.teams.map((t,i)=>`<div class="team">
+    <input id="tn${i}" value="${esc(t.name)}" aria-label="Team ${i+1} name" data-i="${i}">
+    <div class="row"><span class="pts${t.score<0?" neg":""}">${t.score}</span>
+    <span class="adj"><button class="mini" data-adj="${i}" data-d="-100" aria-label="Subtract 100">\u2212</button><button class="mini" data-adj="${i}" data-d="100" aria-label="Add 100">+</button></span></div></div>`).join("");
+}
+function render(){renderBoard();renderScores();save()}
+
+$("scores").addEventListener("input",e=>{if(e.target.dataset.i!=null){S.teams[+e.target.dataset.i].name=e.target.value||("Team "+(+e.target.dataset.i+1));save()}});
+$("scores").addEventListener("click",e=>{const b=e.target.closest("[data-adj]");if(!b)return;S.teams[+b.dataset.adj].score+=+b.dataset.d;render()});
+$("addTeam").onclick=()=>{if(S.teams.length<8){S.teams.push({name:"Team "+(S.teams.length+1),score:0});render()}};
+$("removeTeam").onclick=()=>{if(S.teams.length>1){S.teams.pop();render()}};
+$("resetBtn").onclick=()=>{$("confirmReset").hidden=false};
+$("noReset").onclick=()=>{$("confirmReset").hidden=true};
+$("yesReset").onclick=()=>{const names=S.teams.map(t=>t.name);S=fresh();S.teams=names.map(n=>({name:n,score:0}));$("confirmReset").hidden=true;render()};
+
+/* question modal */
+let cur=null;
+$("board").addEventListener("click",e=>{const t=e.target.closest(".tile");if(!t||t.classList.contains("used"))return;openQ(t.dataset.k)});
+function openQ(k){
+  const [ci,r]=k.split(":").map(Number), c=CATS[ci];
+  cur={k,ci,r,val:VALUES[r],dd:(S.dds||[]).includes(k),wager:null,revealed:false,scored:{}};
+  $("mmeta").textContent=`${c.part} \u00B7 ${c.name}`;
+  $("mval").textContent=VALUES[r];
+  cur.dd?ddScreen():qScreen();
+  $("modal").hidden=false;
+}
+function ddScreen(){
+  const max=Math.max(...S.teams.map(t=>t.score),500);
+  $("mbody").innerHTML=`<div class="dd">Daily Double!</div>
+    <p style="margin:0;text-align:center;color:var(--muted)">The team in control picks a wager (up to ${max}).</p>
+    <div class="wager" style="justify-content:center"><label for="ddw">Wager</label><input id="ddw" type="number" min="5" max="${max}" step="50" value="${cur.val}"><button class="btn primary" id="ddgo">Show question</button></div>`;
+  $("ddgo").onclick=()=>{let w=parseInt($("ddw").value,10);if(!(w>0))w=cur.val;cur.wager=Math.min(w,max);$("mval").textContent=cur.wager;qScreen()};
+  $("ddw").focus();
+}
+function qScreen(){
+  const [q,a]=CATS[cur.ci].qs[cur.r][S.picks[cur.ci][cur.r]]||CATS[cur.ci].qs[cur.r][0], pts=cur.wager??cur.val;
+  $("mbody").innerHTML=`<p class="q" id="mq">${B(q)}</p>
+    <div class="ans" id="ans" hidden><b>Answer</b>${a}</div>
+    <div class="award" id="award" hidden><h3>Award ${pts} points</h3><div class="award-grid">${S.teams.map((t,i)=>`
+      <div class="aw"><span>${esc(t.name)}</span><span class="bs"><button class="ok" data-s="${i}" data-m="1">+${pts}</button><button class="no" data-s="${i}" data-m="-1">\u2212${pts}</button></span></div>`).join("")}</div></div>
+    <div class="actions"><span class="timer" id="timer" aria-live="polite"></span><button class="btn" id="timerBtn">Start 30s</button><button class="btn primary" id="revealBtn">Reveal answer</button><button class="btn" id="doneBtn">Done</button></div>`;
+  $("revealBtn").onclick=reveal;
+  $("doneBtn").onclick=closeQ;
+  $("timerBtn").onclick=startTimer;
+  $("award").addEventListener("click",e=>{const b=e.target.closest("[data-s]");if(!b)return;const i=+b.dataset.s;if(cur.scored[i])return;
+    cur.scored[i]=1;S.teams[i].score+=(+b.dataset.m)*pts;b.parentElement.querySelectorAll("button").forEach(x=>x.disabled=true);renderScores();save()});
+  $("revealBtn").focus();
+}
+function reveal(){if(!cur||cur.revealed)return;cur.revealed=true;$("ans").hidden=false;$("award").hidden=false;$("revealBtn").hidden=true;$("doneBtn").focus()}
+const ORD=["1st","2nd","3rd","4th","5th","6th","7th","8th"];
+function showWinner(){
+  stopTimer();
+  const ranked=S.teams.map(t=>({...t})).sort((a,b)=>b.score-a.score);
+  const top=ranked[0].score, winners=ranked.filter(t=>t.score===top);
+  const names=winners.map(t=>esc(t.name));
+  const head=winners.length>1
+    ? `It\u2019s a tie! <span>${names.join(" &amp; ")}</span> win!`
+    : `<span>${names[0]}</span> wins!`;
+  let place=0,prev=null;
+  const rows=ranked.map((t,i)=>{if(t.score!==prev){place=i;prev=t.score}
+    return `<div class="st${t.score===top?" first":""}"><span class="rk">${ORD[place]}</span><span class="nm">${esc(t.name)}</span><span class="sc">${t.score}</span></div>`}).join("");
+  cur={k:null,winner:true};
+  $("mmeta").textContent="Game over \u00B7 Final standings";$("mval").textContent="WIN";
+  $("mbody").innerHTML=`<p class="win" id="mq">${head}</p>
+    <p class="sub">Champions of the Internet with ${top} points. All packets delivered.</p>
+    <div class="stand">${rows}</div>
+    <div class="actions"><button class="btn" id="doneBtn">Back to board</button><button class="btn primary" id="againBtn">New game</button></div>`;
+  $("doneBtn").onclick=closeQ;
+  $("againBtn").onclick=()=>{closeQ();$("confirmReset").hidden=false;$("yesReset").focus()};
+  $("modal").hidden=false;$("doneBtn").focus();
+  confetti();
+}
+$("winBtn").onclick=showWinner;
+function confetti(){
+  if(window.matchMedia&&matchMedia("(prefers-reduced-motion: reduce)").matches)return;
+  const old=$("confetti");if(old)old.remove();
+  const c=document.createElement("canvas");c.id="confetti";document.body.appendChild(c);
+  const x=c.getContext("2d"),dpr=window.devicePixelRatio||1;
+  const W=c.width=innerWidth*dpr,H=c.height=innerHeight*dpr;
+  const cs=getComputedStyle(document.documentElement);
+  const cols=["--accent","--ack","--board-hi","--bad"].map(v=>cs.getPropertyValue(v).trim()||"#e89a12");
+  const ps=Array.from({length:160},()=>({x:Math.random()*W,y:-Math.random()*H*.6,vx:(Math.random()-.5)*3*dpr,vy:(2+Math.random()*4)*dpr,
+    s:(5+Math.random()*7)*dpr,r:Math.random()*6,vr:(Math.random()-.5)*.3,c:cols[Math.floor(Math.random()*cols.length)]}));
+  const t0=performance.now();
+  (function f(t){x.clearRect(0,0,W,H);
+    ps.forEach(p=>{p.x+=p.vx;p.y+=p.vy;p.r+=p.vr;x.save();x.translate(p.x,p.y);x.rotate(p.r);x.fillStyle=p.c;x.fillRect(-p.s/2,-p.s/4,p.s,p.s/2);x.restore()});
+    if(t-t0<4500)requestAnimationFrame(f);else c.remove()})(t0);
+}
+let tick=null;
+function stopTimer(){clearInterval(tick);tick=null}
+function startTimer(){stopTimer();let s=30;const el=$("timer");el.textContent=s;el.classList.remove("low");
+  tick=setInterval(()=>{s--;if(!$("timer")){stopTimer();return}el.textContent=s>0?s:"Time!";el.classList.toggle("low",s<=5);if(s<=0)stopTimer()},1000)}
+$("rulesBtn").onclick=()=>{
+  cur={k:null,rules:true};
+  $("mmeta").textContent="Packet Jeopardy \u00B7 Full Packet";$("mval").textContent="Rules";
+  $("mbody").innerHTML=`<p class="q" id="mq" style="font-size:clamp(20px,2.6vw,28px)">Goal: earn the most points by reviewing all seven parts of <i>Activity on the Internet</i>.</p>
+    <ol class="rules">
+      <li><span><b>Form your team</b> and pick a name. Get one whiteboard (or sheet of paper) and a marker. Choose one <b>writer</b>.</span></li>
+      <li><span><b>The team in control picks a category and a value.</b> Control rotates to the next team every turn.</span></li>
+      <li><span><b>Every team answers.</b> You have <b>30 seconds</b> to talk quietly and write your answer. Don\u2019t shout it out.</span></li>
+      <li><span><b>Boards up</b> when time is called. Your teacher reveals the answer.</span></li>
+      <li><span><b>Correct answers earn the points.</b> Wrong answers lose nothing on regular questions.</span></li>
+    </ol>
+    <div class="note">
+      <div><h4>Daily Double</h4>Two tiles are hidden. Only the team in control answers. Bet up to your score (or 500). Right: win the bet. Wrong: lose it.</div>
+      <div><h4>Final Round</h4>Every team secretly writes a bet from 0 to your score, then answers. Right: win the bet. Wrong: lose it.</div>
+      <div><h4>Fair play</h4>No notes or devices. Answers must be on the board when time is called. The teacher\u2019s call is final.</div>
+    </div>
+    <div class="actions"><button class="btn primary" id="doneBtn">Let\u2019s play</button></div>`;
+  $("doneBtn").onclick=closeQ;$("modal").hidden=false;$("doneBtn").focus();
+};
+function closeQ(){stopTimer();const cf=$("confetti");if(cf)cf.remove();if(cur&&cur.k&&!S.used.includes(cur.k))S.used.push(cur.k);cur=null;$("modal").hidden=true;render()}
+
+/* final round */
+$("finalBtn").onclick=()=>{
+  cur={k:null,final:true,revealed:false,scored:{}};
+  $("mmeta").textContent="Final Round \u00B7 Parts 1\u20137";$("mval").textContent="Wager";
+  $("mbody").innerHTML=`<p style="margin:0;color:var(--muted)">Each team secretly writes a wager (0 up to their score), then sees the question.</p>
+    <div class="award-grid">${S.teams.map((t,i)=>`<div class="aw"><span>${esc(t.name)} <small style="color:var(--muted)">(${t.score})</small></span>
+      <input id="fw${i}" type="number" min="0" max="${Math.max(t.score,0)}" step="50" value="0" style="width:96px;font:inherit;padding:4px 6px;border:1px solid var(--line);border-radius:6px;background:var(--bg);color:var(--ink)" aria-label="${esc(t.name)} wager"></div>`).join("")}</div>
+    <div class="actions"><button class="btn primary" id="fgo">Lock wagers & show question</button><button class="btn" id="fcancel">Cancel</button></div>`;
+  $("fcancel").onclick=closeQ;
+  $("fgo").onclick=()=>{
+    const w=S.teams.map((t,i)=>{let v=parseInt($("fw"+i).value,10)||0;return Math.max(0,Math.min(v,Math.max(t.score,0)))});
+    $("mval").textContent="Final";
+    const F=FINALS[S.fp]||FINALS[0];
+    $("mbody").innerHTML=`<p class="q" id="mq">${F.q}</p>
+      <div class="ans" id="ans" hidden><b>Model answer</b>${F.a}</div>
+      <div class="award" id="award" hidden><h3>Score each team (wrong answers lose their wager)</h3><div class="award-grid">${S.teams.map((t,i)=>`
+        <div class="aw"><span>${esc(t.name)} \u00B7 ${w[i]}</span><span class="bs"><button class="ok" data-s="${i}" data-m="1">Right</button><button class="no" data-s="${i}" data-m="-1">Wrong</button></span></div>`).join("")}</div></div>
+      <div class="actions"><button class="btn primary" id="revealBtn">Reveal answer</button><button class="btn" id="doneBtn">Done</button></div>`;
+    $("doneBtn").textContent="See the winner";
+    $("revealBtn").onclick=reveal;$("doneBtn").onclick=showWinner;
+    $("award").addEventListener("click",e=>{const b=e.target.closest("[data-s]");if(!b)return;const i=+b.dataset.s;if(cur.scored[i])return;
+      cur.scored[i]=1;S.teams[i].score+=(+b.dataset.m)*w[i];b.parentElement.querySelectorAll("button").forEach(x=>x.disabled=true);renderScores();save()});
+  };
+  $("modal").hidden=false;
+};
+
+document.addEventListener("keydown",e=>{
+  if($("modal").hidden)return;
+  if(e.key==="Escape")closeQ();
+  else if(e.key===" "&&e.target.tagName!=="INPUT"&&$("revealBtn")&&!$("revealBtn").hidden){e.preventDefault();reveal()}
+});
+render();
+</script>
+
+</body>
+</html>
